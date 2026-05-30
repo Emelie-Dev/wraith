@@ -3,6 +3,7 @@ import { fetchEventsSafe, getLatestLedger, withRetry, validateNetworkConfig } fr
 import { parseEvents } from "./decoder";
 import {
   upsertTransfers,
+  upsertAccountSummaries,
   upsertNftTransfers,
   getNftMetadata,
   upsertNftMetadata,
@@ -123,22 +124,30 @@ async function pollOnce(
 
   // Split events by type: NFT (4 topics) vs fungible (3 topics)
   const fungibleEvents = events.filter((e) => !isNftTransferEvent(e));
-  const nftRawEvents = events.filter((e) => isNftTransferEvent(e));
+  const nftRawEvents   = events.filter((e) => isNftTransferEvent(e));
 
   // ── Fungible path ────────────────────────────────────────────────────────────
-  const records = parseEvents(fungibleEvents);
+  const records  = parseEvents(fungibleEvents);
   const inserted = await upsertTransfers(records);
-  totalIndexed += inserted;
+  totalIndexed  += inserted;
 
+  // Update materialized account summaries alongside transfer inserts
+  if (inserted > 0) {
+    await upsertAccountSummaries(records).catch((e) =>
+      console.error("[indexer] Account summary upsert failed:", e)
+    );
+  }
+
+  // Broadcast each new record to WebSocket subscribers
   if (inserted > 0) {
     records.forEach(emitTransfer);
   }
 
   // ── NFT path ─────────────────────────────────────────────────────────────────
-  const nftParsed = parseNftEvents(nftRawEvents);
-  const nftRecords = nftParsed.map((p) => p.record);
+  const nftParsed   = parseNftEvents(nftRawEvents);
+  const nftRecords  = nftParsed.map((p) => p.record);
   const nftInserted = await upsertNftTransfers(nftRecords);
-  totalIndexed += nftInserted;
+  totalIndexed     += nftInserted;
 
   // Lazy-load metadata for unique (contractId, tokenId) pairs not yet cached
   if (nftParsed.length > 0) {
@@ -209,7 +218,7 @@ export async function startIndexer(): Promise<void> {
   // ── Polling loop ────────────────────────────────────────────────────────────
   while (true) {
     try {
-      const tip = await withRetry(getLatestLedger);
+      const tip    = await withRetry(getLatestLedger);
       const target = tip - TIP_LAG;
 
       if (currentLedger >= target) {
