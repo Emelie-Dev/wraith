@@ -4,3 +4,4 @@ docs/
 .env
 *.env.local
 bench/results.json
+.aider*
