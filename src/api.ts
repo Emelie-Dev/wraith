@@ -7,6 +7,7 @@ import { getLatestLedger } from "./rpc";
 import { getIndexerStats } from "./indexer";
 import { createAccountsRouter } from "./api/accounts";
 import { createWebhooksRouter } from "./api/webhooks";
+import { createGraphQLMiddleware } from "./graphql/server";
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 const limiter = rateLimit({
@@ -79,6 +80,7 @@ export function createApp(): express.Application {
 
   // ── Webhook subscription management ──────────────────────────────────────────
   app.use("/webhooks", createWebhooksRouter());
+  app.use("/graphql", createGraphQLMiddleware());
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   const parseIntParam = (val: unknown, fallback: number): number => {
